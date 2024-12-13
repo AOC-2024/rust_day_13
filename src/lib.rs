@@ -1,10 +1,16 @@
+use std::collections::VecDeque;
 use std::fs::read_to_string;
 use std::str::FromStr;
 use regex::Regex;
 
 pub fn count_tokens_to_will_all(input_path: &str) -> usize {
     let puzzle = extract_puzzle(input_path);
-    0
+    puzzle.iter().fold(0, |mut acc, item| {
+        if let Some(tokens) = token_to_get_prize(&item) {
+            acc += tokens;
+        }
+        acc
+    })
 }
 
 fn extract_puzzle(input_game: &str) -> Vec<Game> {
@@ -51,55 +57,48 @@ fn read_button(button_str: Option<&&str>) -> Point {
     }
 }
 
-fn token_to_get_prize(game: Game) -> Option<usize> {
-    if let Some(value) = check_only_one_button_needed(&game) {
-        return value;
-    }
+fn token_to_get_prize(game: &Game) -> Option<usize> {
+    // Define a queue for BFS
+    let mut queue = VecDeque::new();
+    let mut visited = std::collections::HashSet::new();
 
-    let mut position_x = game.button_a.x;
-    let mut position_y = game.button_a.y;
-    let mut token_count = 0;
-    let mut try_count = 0;
-    //TODO start to press at least one button to start
-    loop {
-        // End prize missed or exceeding try count
-        if position_x > game.prize.x || position_y > game.prize.y  || try_count > 200 {
-            return None;
-        }
+    // Start from the initial position
+    queue.push_back((0, 0, 0)); // (position_x, position_y, token_count)
 
-        // End check position on prize
-        if position_y == game.prize.y && position_x == game.prize.x {
+    while let Some((position_x, position_y, token_count)) = queue.pop_front() {
+        // Check if the position is the prize
+        if position_x == game.prize.x && position_y == game.prize.y {
             return Some(token_count);
         }
 
-        // Condider button A next move
-        if  game.prize.x - position_x % game.button_a.x == 0 {
-            token_count += 1;
-            position_x += game.button_a.x;
-            position_y += game.button_a.y;
+        // Avoid revisiting the same state
+        if visited.contains(&(position_x, position_y)) {
+            continue;
+        }
+        visited.insert((position_x, position_y));
+
+        // End conditions
+        if position_x > game.prize.x || position_y > game.prize.y || token_count > 400 {
+            continue;
         }
 
-        if game.prize.y - position_y % game.button_a.y  == 0 {
-            token_count += 1;
-            position_y += game.button_a.y;
-            position_x += game.button_a.x;
+        // Add possible moves by pressing button A
+        let position_x_a = position_x + game.button_a.x;
+        let position_y_a = position_y + game.button_a.y;
+        if position_x_a <= game.prize.x && position_y_a <= game.prize.y {
+            queue.push_back((position_x_a, position_y_a, token_count + 3));
         }
 
-        // Consider button B next move
-        if game.prize.x - position_x % game.button_b.x == 0 {
-            token_count += 1;
-            position_x += game.button_b.x;
-            position_y += game.button_b.y;
+        // Add possible moves by pressing button B
+        let position_x_b = position_x + game.button_b.x;
+        let position_y_b = position_y + game.button_b.y;
+        if position_x_b <= game.prize.x && position_y_b <= game.prize.y {
+            queue.push_back((position_x_b, position_y_b, token_count + 1));
         }
-
-        if game.prize.y - position_y % game.button_b.y == 0 {
-            token_count += 1;
-            position_y += game.button_b.y;
-            position_x += game.button_b.x;
-        }
-
-        try_count += 1;
     }
+
+    // If no path was found
+    None
 }
 
 fn check_only_one_button_needed(game: &Game) -> Option<Option<usize>> {
@@ -138,6 +137,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn should_count_token_when_pressing_two_times_second_one_time_first() {
+        let game = Game {
+            button_a: Point {
+                x: 10,
+                y: 3
+            },
+            button_b: Point {
+                x: 7,
+                y: 5
+            },
+            prize: Point {
+                x: 24,
+                y: 13
+            }
+        };
+        assert_eq!(token_to_get_prize(&game), Some(5));
+    }
+
+    #[test]
+    fn should_count_token_when_pressing_two_times_first_one_time_second() {
+        let game = Game {
+            button_a: Point {
+                x: 10,
+                y: 3
+            },
+            button_b: Point {
+                x: 7,
+                y: 5
+            },
+            prize: Point {
+                x: 27,
+                y: 11
+            }
+        };
+        assert_eq!(token_to_get_prize(&game), Some(7));
+    }
+
+    #[test]
     fn should_count_token_when_pressing_one_time_each_button() {
         let game = Game {
             button_a: Point {
@@ -153,7 +190,7 @@ mod tests {
                 y: 8
             }
         };
-        assert_eq!(token_to_get_prize(game), Some(2));
+        assert_eq!(token_to_get_prize(&game), Some(4));
     }
 
     #[test]
@@ -172,7 +209,7 @@ mod tests {
                 y: 10
             }
         };
-        assert_eq!(token_to_get_prize(game), None);
+        assert_eq!(token_to_get_prize(&game), None);
     }
 
     #[test]
@@ -191,7 +228,7 @@ mod tests {
                 y: 10
             }
         };
-        assert_eq!(token_to_get_prize(game), Some(2));
+        assert_eq!(token_to_get_prize(&game), Some(2));
     }
 
     #[test]
@@ -210,7 +247,7 @@ mod tests {
                 y: 8
             }
         };
-        assert_eq!(token_to_get_prize(game), None);
+        assert_eq!(token_to_get_prize(&game), None);
     }
 
     #[test]
@@ -229,7 +266,7 @@ mod tests {
                 y: 6
             }
         };
-        assert_eq!(token_to_get_prize(game), Some(2));
+        assert_eq!(token_to_get_prize(&game), Some(6));
     }
 
     #[test]
@@ -248,7 +285,7 @@ mod tests {
                 y: 3
             }
         };
-        assert_eq!(token_to_get_prize(game), Some(1));
+        assert_eq!(token_to_get_prize(&game), Some(3));
     }
 
     #[test]
