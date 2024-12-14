@@ -3,8 +3,13 @@ use std::fs::read_to_string;
 use std::str::FromStr;
 use regex::Regex;
 
-pub fn count_tokens_to_will_all(input_path: &str) -> usize {
-    let puzzle = extract_puzzle(input_path);
+pub fn count_tokens_to_will_all(input_path: &str, multiplier: Option<usize>) -> i128 {
+    let puzzle = extract_puzzle(input_path, multiplier);
+    //solve_bfs(&puzzle)
+    solve_with_diophantine(&puzzle)
+}
+#[allow(dead_code)]
+fn solve_bfs(puzzle: &Vec<Game>) -> usize {
     puzzle.iter().fold(0, |mut acc, item| {
         if let Some(tokens) = token_to_get_prize(&item) {
             acc += tokens;
@@ -13,30 +18,61 @@ pub fn count_tokens_to_will_all(input_path: &str) -> usize {
     })
 }
 
-fn extract_puzzle(input_game: &str) -> Vec<Game> {
+fn solve_with_diophantine(puzzle: &Vec<Game>) -> i128 {
+    puzzle.iter().fold(0, |mut acc, item| {
+        if let Some(tokens) = token_to_get_prize_diophantine(&item) {
+            acc += tokens;
+        }
+        acc
+    })
+}
+
+fn token_to_get_prize_diophantine(puzzle: &Game) -> Option<i128> {
+    let ax = puzzle.button_a.x as i128;
+    let bx = puzzle.button_b.x as i128;
+    let ay = puzzle.button_a.y as i128;
+    let by = puzzle.button_b.y as i128;
+    let px = puzzle.prize.x as i128;
+    let py = puzzle.prize.y as i128;
+
+    let b = (py * ax - px * ay) / (by * ax - bx * ay);
+    let a = (px - b * bx) / ax;
+    if (ax * a + bx * b, ay * a + by * b) != (px, py) {
+        return None;
+    }
+    Some(a * 3 + b)
+}
+
+fn extract_puzzle(input_game: &str, multiplier: Option<usize>) -> Vec<Game> {
     read_to_string(input_game)
         .unwrap()
         .split("\r\n\r\n")
-        .map(|line| map_game(line.split("\r\n").collect()))
+        .map(|line| map_game(line.split("\r\n").collect(), multiplier))
         .collect()
 }
 
-fn map_game(game_str: Vec<&str>) -> Game {
+fn map_game(game_str: Vec<&str>, multiplier: Option<usize>) -> Game {
     Game {
         button_a: read_button(game_str.get(0)),
         button_b: read_button(game_str.get(1)),
-        prize: read_price(game_str.get(2)),
+        prize: read_price(game_str.get(2), multiplier),
     }
 }
 
-fn read_price(price_str: Option<&&str>) -> Point {
+fn read_price(price_str: Option<&&str>, multiplier: Option<usize>) -> Point {
     if price_str.is_none() {
         panic!("Button must not be empty");
     }
     let button_regex = Regex::new("X=(?<x>[0-9]{1,5}), Y=(?<y>[0-9]{1,5})").unwrap();
     let matched = button_regex.captures_iter(price_str.unwrap()).next().unwrap();
-    let x = FromStr::from_str(matched.name("x").unwrap().as_str()).unwrap();
-    let y = FromStr::from_str(matched.name("y").unwrap().as_str()).unwrap();
+    let mut x: usize = FromStr::from_str(matched.name("x").unwrap().as_str()).unwrap();
+    let mut y: usize = FromStr::from_str(matched.name("y").unwrap().as_str()).unwrap();
+
+    if let Some(multiplier) = multiplier {
+        x += multiplier;
+        y += multiplier;
+    }
+
     Point {
         x,
         y
@@ -56,7 +92,7 @@ fn read_button(button_str: Option<&&str>) -> Point {
         y
     }
 }
-
+#[allow(dead_code)]
 fn token_to_get_prize(game: &Game) -> Option<usize> {
     // Define a queue for BFS
     let mut queue = VecDeque::new();
@@ -78,7 +114,7 @@ fn token_to_get_prize(game: &Game) -> Option<usize> {
         visited.insert((position_x, position_y));
 
         // End conditions
-        if position_x > game.prize.x || position_y > game.prize.y || token_count > 400 {
+        if position_x > game.prize.x || position_y > game.prize.y || token_count > 10000000 {
             continue;
         }
 
@@ -98,23 +134,6 @@ fn token_to_get_prize(game: &Game) -> Option<usize> {
     }
 
     // If no path was found
-    None
-}
-
-fn check_only_one_button_needed(game: &Game) -> Option<Option<usize>> {
-    if game.prize.x % game.button_a.x == 0 {
-        let press_count_x = game.prize.x / game.button_a.x;
-        if game.button_a.y * press_count_x == game.prize.y {
-            return Some(Some(press_count_x))
-        }
-    }
-
-    if game.prize.y % game.button_b.y == 0 {
-        let press_count_y = game.prize.y / game.button_b.y;
-        if game.button_b.x * press_count_y == game.prize.x {
-            return Some(Some(press_count_y))
-        }
-    }
     None
 }
 
@@ -289,8 +308,44 @@ mod tests {
     }
 
     #[test]
-    fn should_extract_puzzle() {
-        assert_eq!(extract_puzzle("tests/resources/light_puzzle.txt"),
+    fn should_extract_puzzle_with_multiplier() {
+        assert_eq!(extract_puzzle("tests/resources/light_puzzle.txt", Some(100)),
+                   vec![
+                       Game {
+                           button_a: Point {
+                               x: 94,
+                               y: 34
+                           },
+                           button_b: Point {
+                               x: 22,
+                               y: 67
+                           },
+                           prize: Point {
+                               x: 8500,
+                               y: 5500
+                           }
+                       },
+                       Game {
+                           button_a: Point {
+                               x: 26,
+                               y: 66
+                           },
+                           button_b: Point {
+                               x: 67,
+                               y: 21
+                           },
+                           prize: Point {
+                               x: 12848,
+                               y: 12276
+                           }
+                       }
+                   ]
+        );
+    }
+
+    #[test]
+    fn should_extract_puzzle_without_multiplier() {
+        assert_eq!(extract_puzzle("tests/resources/light_puzzle.txt", None),
             vec![
                 Game {
                     button_a: Point {
